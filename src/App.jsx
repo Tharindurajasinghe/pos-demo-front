@@ -7,6 +7,7 @@ import Summary from './components/Summary';
 import CheckBill from './components/CheckBill';
 import DayEndSummary from './components/DayEndSummary';
 import BarcodePrintPage from './components/BarcodePrintPage';
+import Footer from './components/Footer';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -49,7 +50,7 @@ function App() {
         setActiveScreen={setActiveScreen}
         onLogout={handleLogout}
       />
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-4 py-6 pb-10">
         {activeScreen === 'selling' && <SellingScreen onEndDay={handleEndDay} />}
         {activeScreen === 'store' && <StoreManagement />}
         {activeScreen === 'summary' && <Summary />}
@@ -57,6 +58,7 @@ function App() {
         {activeScreen === 'dayend' && <DayEndSummary data={dayEndData} onLogout={handleLogout} />}
         {activeScreen === 'barcode' && <BarcodePrintPage />}
       </div>
+      <Footer />
     </div>
   );
 }

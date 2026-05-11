@@ -239,8 +239,8 @@ export const getBillHTML = (bill) => {
        </div>
       <!-- CONTACT BAR -->
       <div class="contact-bar">
-          B/88, Badulupitiya,Badulla<br>
-           Tele - 0767153333 / 0787153333
+          Sample Adress,Badulla<br>
+           Tele - 0701231234 / 072123456
       </div>
 
       <!-- BILL META -->
