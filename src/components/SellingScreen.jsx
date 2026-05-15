@@ -190,7 +190,7 @@ const SellingScreen = ({ onEndDay }) => {
     setSuggestions([]);
 
     try {
-      const res = await api.searchByBarcode(barcode);
+      const res = await api.searchByBarcode(barcode.toUpperCase());
       const product = new Product(res.data);
 
       if (product.stock <= 0) {
@@ -505,7 +505,7 @@ const SellingScreen = ({ onEndDay }) => {
           // Also try barcode lookup in parallel (value might be a barcode being typed)
           let byBarcode = null;
           try {
-            const bRes = await api.searchByBarcode(value.trim());
+            const bRes = await api.searchByBarcode(value.trim().toUpperCase());
             byBarcode = new Product(bRes.data);
           } catch { /* barcode not found — that's fine */ }
 
