@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { UNIT_OPTIONS } from '../utils/Units';  // ✅ NEW IMPORT
+import { UNIT_OPTIONS } from '../utils/Units';
 import BarcodeGenerator from './BarcodeGenerator';
 
 /**
  * AddProduct Component
  * Supports adding one product with multiple variants in a single form.
  * Each variant row: variant name | unit | stock | buying price | selling price | remove
+ * Each variant also has an expandable expire dates section.
  */
 const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onProductAdded }) => {
   const [categories, setCategories] = useState([]);
 
   // Variant rows — each row is one variant
   const [variantRows, setVariantRows] = useState([
-    { variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '' }
+    { variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '', expireDates: [], showDates: false }
   ]);
 
   useEffect(() => {
     if (showAddModal) {
       loadCategories();
-      setVariantRows([{ variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '' }]);
+      setVariantRows([{ variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '', expireDates: [], showDates: false }]);
     }
   }, [showAddModal]);
 
@@ -35,7 +36,7 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
   const addVariantRow = () => {
     setVariantRows(prev => [
       ...prev,
-      { variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '' }
+      { variant: '', unit: 'unit', stock: '', buyingPrice: '', sellingPrice: '', barcode: '', expireDates: [], showDates: false }
     ]);
   };
 
@@ -51,8 +52,45 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
   };
 
   const updateBarcodeForRow = (index, value) => {
-  updateVariantRow(index, 'barcode', value);
-};
+    updateVariantRow(index, 'barcode', value);
+  };
+
+  // ── Expire date helpers ──────────────────────────────────────────────────
+
+  const toggleShowDates = (index) => {
+    setVariantRows(prev =>
+      prev.map((row, i) => i === index ? { ...row, showDates: !row.showDates } : row)
+    );
+  };
+
+  const addExpireDate = (index, dateStr) => {
+    if (!dateStr) return;
+    setVariantRows(prev =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        // Avoid duplicate dates
+        if (row.expireDates.includes(dateStr)) return row;
+        return { ...row, expireDates: [...row.expireDates, dateStr].sort() };
+      })
+    );
+  };
+
+  const removeExpireDate = (index, dateStr) => {
+    setVariantRows(prev =>
+      prev.map((row, i) =>
+        i === index
+          ? { ...row, expireDates: row.expireDates.filter(d => d !== dateStr) }
+          : row
+      )
+    );
+  };
+
+  const formatDateDisplay = (dateStr) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  // ── Submit ───────────────────────────────────────────────────────────────
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -69,8 +107,7 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
         alert(`Please fill all fields in row ${i + 1}`);
         return;
       }
-      
-      // ✅ NEW VALIDATION: Check if stock is integer for unit='unit'
+
       if (row.unit === 'unit') {
         const stockValue = parseFloat(row.stock);
         if (!Number.isInteger(stockValue)) {
@@ -78,7 +115,7 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
           return;
         }
       }
-      
+
       if (parseFloat(row.sellingPrice) < parseFloat(row.buyingPrice)) {
         alert(`Row ${i + 1}: Selling price cannot be less than buying price`);
         return;
@@ -96,15 +133,16 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
     try {
       for (const row of variantRows) {
         await api.addProduct({
-          productId: formData.productId,
-          name: formData.name,
-          variant: row.variant.trim() || undefined,
-          categoryId: formData.categoryId,
-          stock: parseFloat(row.stock),
-          buyingPrice: parseFloat(row.buyingPrice),
+          productId   : formData.productId,
+          name        : formData.name,
+          variant     : row.variant.trim() || undefined,
+          categoryId  : formData.categoryId,
+          stock       : parseFloat(row.stock),
+          buyingPrice : parseFloat(row.buyingPrice),
           sellingPrice: parseFloat(row.sellingPrice),
-          unit: row.unit,
-          barcode: row.barcode.trim() || undefined   // barcode is optional
+          unit        : row.unit,
+          barcode     : row.barcode.trim() || undefined,
+          expireDates : row.expireDates   // array of 'YYYY-MM-DD' strings
         });
       }
 
@@ -187,7 +225,6 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
                 <label className="text-gray-700 font-medium">Variants</label>
                 <p className="text-xs text-gray-500">Leave variant name empty for Standard</p>
               </div>
-            
               <button
                 type="button"
                 onClick={addVariantRow}
@@ -211,96 +248,155 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
             {/* Variant Rows */}
             <div className="space-y-2">
               {variantRows.map((row, index) => (
-                <div
-                  key={index}
-                  className="grid gap-2 items-center bg-gray-50 px-2 py-2 rounded border border-gray-200"
-                  style={{gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.1fr 1.1fr 32px'}}
-                >
-                  {/* Variant Name */}
-                  <input
-                    type="text"
-                    value={row.variant}
-                    onChange={(e) => updateVariantRow(index, 'variant', e.target.value)}
-                    placeholder={index === 0 ? 'Small / or leave empty' : 'Large / XL...'}
-                    className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
-                  />
-                  
-                  {/* Unit Dropdown */}
-                  <select
-                    value={row.unit}
-                    onChange={(e) => updateVariantRow(index, 'unit', e.target.value)}
-                    className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
-                  >
-                    {UNIT_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.value === 'unit' ? 'Unit' : opt.value}
-                      </option>
-                    ))}
-                  </select>
+                <div key={index} className="bg-gray-50 rounded border border-gray-200">
 
-                  {/* Barcode (optional) */}
-                  <input
-                    type="text"
-                    value={row.barcode}
-                    onChange={(e) => updateVariantRow(index, 'barcode', e.target.value)}
-                    placeholder="Optional"
-                    className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
-                  />
-                  
-                  {/* Stock */}
-                  <input
-                    type="number"
-                    step={row.unit === 'unit' ? '1' : '0.01'}
-                    value={row.stock}
-                    onChange={(e) => updateVariantRow(index, 'stock', e.target.value)}
-                    placeholder="0"
-                    min="0"
-                    required
-                    className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
-                  />
-                  
-                  {/* Buying Price */}
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={row.buyingPrice}
-                    onChange={(e) => updateVariantRow(index, 'buyingPrice', e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    required
-                    className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
-                  />
-                  
-                  {/* Selling Price */}
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={row.sellingPrice}
-                    onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
-                    placeholder="0.00"
-                    min="0"
-                    required
-                    className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 bg-white w-full ${
-                      row.buyingPrice && row.sellingPrice && parseFloat(row.sellingPrice) < parseFloat(row.buyingPrice)
-                        ? 'border-red-400 focus:ring-red-400'
-                        : 'focus:ring-green-400'
-                    }`}
-                  />
-                  
-                  {/* Remove Button */}
-                  <button
-                    type="button"
-                    onClick={() => removeVariantRow(index)}
-                    disabled={variantRows.length === 1}
-                    className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold flex-shrink-0
-                      ${variantRows.length === 1
-                        ? 'text-gray-300 cursor-not-allowed'
-                        : 'text-red-500 hover:bg-red-100 hover:text-red-700 cursor-pointer'
-                      }`}
-                    title="Remove variant"
+                  {/* Main row grid */}
+                  <div
+                    className="grid gap-2 items-center px-2 py-2"
+                    style={{gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.1fr 1.1fr 32px'}}
                   >
-                    ✕
-                  </button>
+                    {/* Variant Name */}
+                    <input
+                      type="text"
+                      value={row.variant}
+                      onChange={(e) => updateVariantRow(index, 'variant', e.target.value)}
+                      placeholder={index === 0 ? 'Small / or leave empty' : 'Large / XL...'}
+                      className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
+                    />
+
+                    {/* Unit Dropdown */}
+                    <select
+                      value={row.unit}
+                      onChange={(e) => updateVariantRow(index, 'unit', e.target.value)}
+                      className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
+                    >
+                      {UNIT_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.value === 'unit' ? 'Unit' : opt.value}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Barcode (optional) */}
+                    <input
+                      type="text"
+                      value={row.barcode}
+                      onChange={(e) => updateVariantRow(index, 'barcode', e.target.value)}
+                      placeholder="Optional"
+                      className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full"
+                    />
+
+                    {/* Stock */}
+                    <input
+                      type="number"
+                      step={row.unit === 'unit' ? '1' : '0.01'}
+                      value={row.stock}
+                      onChange={(e) => updateVariantRow(index, 'stock', e.target.value)}
+                      placeholder="0"
+                      min="0"
+                      required
+                      className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+
+                    {/* Buying Price */}
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.buyingPrice}
+                      onChange={(e) => updateVariantRow(index, 'buyingPrice', e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      required
+                      className="px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-400 bg-white w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+
+                    {/* Selling Price */}
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.sellingPrice}
+                      onChange={(e) => updateVariantRow(index, 'sellingPrice', e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      required
+                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 bg-white w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                        row.buyingPrice && row.sellingPrice && parseFloat(row.sellingPrice) < parseFloat(row.buyingPrice)
+                          ? 'border-red-400 focus:ring-red-400'
+                          : 'focus:ring-green-400'
+                      }`}
+                    />
+
+                    {/* Remove Button */}
+                    <button
+                      type="button"
+                      onClick={() => removeVariantRow(index)}
+                      disabled={variantRows.length === 1}
+                      className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold flex-shrink-0
+                        ${variantRows.length === 1
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-red-500 hover:bg-red-100 hover:text-red-700 cursor-pointer'
+                        }`}
+                      title="Remove variant"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Expire Dates sub-section */}
+                  <div className="px-2 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleShowDates(index)}
+                      className="flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-800 font-medium mb-1"
+                    >
+                      <span>📅</span>
+                      <span>Expire Dates</span>
+                      <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">
+                        {row.expireDates.length}
+                      </span>
+                      <span>{row.showDates ? '▲' : '▼'}</span>
+                    </button>
+
+                    {row.showDates && (
+                      <div className="bg-orange-50 border border-orange-200 rounded p-2">
+                        {/* Existing dates */}
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {row.expireDates.length === 0 && (
+                            <span className="text-xs text-gray-400 italic">No expire dates added</span>
+                          )}
+                          {row.expireDates.map((dateStr) => (
+                            <span
+                              key={dateStr}
+                              className="inline-flex items-center gap-1 bg-orange-200 text-orange-900 text-xs px-2 py-0.5 rounded-full font-medium"
+                            >
+                              📅 {formatDateDisplay(dateStr)}
+                              <button
+                                type="button"
+                                onClick={() => removeExpireDate(index, dateStr)}
+                                className="text-orange-700 hover:text-red-700 font-bold ml-0.5"
+                                title="Remove this date"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Add new date */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 whitespace-nowrap">Add date:</span>
+                          <input
+                            type="date"
+                            onChange={(e) => {
+                              addExpireDate(index, e.target.value);
+                              e.target.value = ''; // reset after picking
+                            }}
+                            className="px-2 py-0.5 border border-orange-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -317,11 +413,11 @@ const AddProduct = ({ showAddModal, setShowAddModal, formData, setFormData, onPr
           </div>
 
           {/* Barcode Generator Panel */}
-             <BarcodeGenerator
+          <BarcodeGenerator
             variantRows={variantRows}
             productId={formData.productId}
             onUpdateBarcode={updateBarcodeForRow}
-             />
+          />
 
           {/* Footer Buttons */}
           <div className="flex gap-3 pt-4 border-t mt-2">

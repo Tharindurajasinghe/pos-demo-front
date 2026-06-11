@@ -6,6 +6,8 @@ import { getUnitShort } from '../utils/Units';
 import UptoNowBox from './UptoNowBox';
 import LowStockAlert from './LowStockAlert';
 import LoadingOverlay from './LoadingOverlay';
+import ExpiryWarning from './ExpiryWarning';
+
 
 /**
  * SellingScreen
@@ -1001,8 +1003,9 @@ const SellingScreen = ({ onEndDay }) => {
         </div>
       </div>
 
-      <div className="mb-6">
+      <div className="grid grid-cols-2 gap-6 mb-6">
         <LowStockAlert />
+        <ExpiryWarning />
       </div>
 
       <UptoNowBox show={showBills} bills={todayBills} onClose={() => setShowBills(false)} />

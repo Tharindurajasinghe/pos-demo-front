@@ -114,6 +114,14 @@ class APIService {
   }
 
   /**
+   * Get products expiring within 10 days (or already expired)
+   * Returns array of { productId, name, variant, categoryName, expireDate, isExpired }
+   */
+  getExpiringProducts() {
+    return this.axiosInstance.get('/products/expiring');
+  }
+
+  /**
    * Add new product (with optional variant)
    * @param {Object} product - Product data with optional variant field
    */

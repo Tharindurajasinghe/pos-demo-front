@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { UNIT_OPTIONS } from '../utils/Units';  // ✅ NEW IMPORT
+import { UNIT_OPTIONS } from '../utils/Units';
 import BarcodeGenerator from './BarcodeGenerator';
 
 /**
@@ -11,11 +11,12 @@ import BarcodeGenerator from './BarcodeGenerator';
  * - User can edit any variant row (name, stock, buying price, selling price, unit)
  * - User can delete an existing variant row
  * - User can add brand new variant rows
+ * - Each variant has an expire dates section (add/remove individual dates)
  * - Product name and category apply to ALL variants (shared fields)
  *
  * Variant rows have two kinds:
- *   existing : { mode:'existing', originalVariant, variant, unit, stock, buyingPrice, sellingPrice, deleted }
- *   new      : { mode:'new',      variant, unit, stock, buyingPrice, sellingPrice }
+ *   existing : { mode:'existing', originalVariant, variant, unit, stock, buyingPrice, sellingPrice, barcode, expireDates, deleted }
+ *   new      : { mode:'new',      variant, unit, stock, buyingPrice, sellingPrice, barcode, expireDates }
  */
 const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProductUpdated }) => {
   const [categories, setCategories]   = useState([]);
@@ -49,17 +50,22 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
         setCategoryId(variants[0].categoryId);
       }
 
-      // Build existing rows
+      // Build existing rows — convert Date objects to 'YYYY-MM-DD' strings for the date input
       setVariantRows(
         variants.map(v => ({
           mode           : 'existing',
           originalVariant: v.variant || 'Standard',
           variant        : v.variant || 'Standard',
           unit           : v.unit || 'unit',
-          barcode        : v.barcode || '',   // barcode field
+          barcode        : v.barcode || '',
           stock          : String(v.stock),
           buyingPrice    : String(v.buyingPrice),
           sellingPrice   : String(v.sellingPrice),
+          expireDates    : (v.expireDates || []).map(d => {
+            const dt = new Date(d);
+            return dt.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+          }).sort(),
+          showDates      : false,
           deleted        : false
         }))
       );
@@ -76,18 +82,16 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
   const addNewRow = () => {
     setVariantRows(prev => [
       ...prev,
-      { mode: 'new', variant: '', unit: 'unit', barcode: '', stock: '', buyingPrice: '', sellingPrice: '' }
+      { mode: 'new', variant: '', unit: 'unit', barcode: '', stock: '', buyingPrice: '', sellingPrice: '', expireDates: [], showDates: false }
     ]);
   };
 
   const removeRow = (index) => {
     const row = variantRows[index];
     if (row.mode === 'new') {
-      // New row — just remove from state
       setVariantRows(prev => prev.filter((_, i) => i !== index));
     } else {
-      // Existing row — mark as deleted (or undelete if already deleted)
-      setVariantRows(prev => prev.map((r, i) => 
+      setVariantRows(prev => prev.map((r, i) =>
         i === index ? { ...r, deleted: !r.deleted } : r
       ));
     }
@@ -99,6 +103,40 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
     );
   };
 
+  // ── Expire date helpers ──────────────────────────────────────────────────
+
+  const toggleShowDates = (index) => {
+    setVariantRows(prev =>
+      prev.map((row, i) => i === index ? { ...row, showDates: !row.showDates } : row)
+    );
+  };
+
+  const addExpireDate = (index, dateStr) => {
+    if (!dateStr) return;
+    setVariantRows(prev =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        if (row.expireDates.includes(dateStr)) return row; // no duplicates
+        return { ...row, expireDates: [...row.expireDates, dateStr].sort() };
+      })
+    );
+  };
+
+  const removeExpireDate = (index, dateStr) => {
+    setVariantRows(prev =>
+      prev.map((row, i) =>
+        i === index
+          ? { ...row, expireDates: row.expireDates.filter(d => d !== dateStr) }
+          : row
+      )
+    );
+  };
+
+  const formatDateDisplay = (dateStr) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
   // ── Validation ───────────────────────────────────────────────────────────
 
   const validateRow = (row, index) => {
@@ -108,7 +146,6 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
       return `Row ${index + 1}: Please fill all fields`;
     }
 
-    // ✅ NEW VALIDATION: Check if stock is integer for unit='unit'
     if (row.unit === 'unit') {
       const stockValue = parseFloat(row.stock);
       if (!Number.isInteger(stockValue)) {
@@ -167,12 +204,13 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
             api.updateProduct(productId, {
               name,
               categoryId,
-              variant: row.variant.trim() || 'Standard', 
-              stock: parseFloat(row.stock),
-              buyingPrice: parseFloat(row.buyingPrice),
+              variant     : row.variant.trim() || 'Standard',
+              stock       : parseFloat(row.stock),
+              buyingPrice : parseFloat(row.buyingPrice),
               sellingPrice: parseFloat(row.sellingPrice),
-              unit: row.unit,
-              barcode: row.barcode.trim() || null   // send null to clear barcode
+              unit        : row.unit,
+              barcode     : row.barcode.trim() || null,
+              expireDates : row.expireDates   // full array — replaces existing on backend
             }, row.originalVariant)
           );
         }
@@ -194,13 +232,14 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
             api.addProduct({
               productId,
               name,
-              variant: row.variant.trim() || undefined,
+              variant     : row.variant.trim() || undefined,
               categoryId,
-              stock: parseFloat(row.stock),
-              buyingPrice: parseFloat(row.buyingPrice),
+              stock       : parseFloat(row.stock),
+              buyingPrice : parseFloat(row.buyingPrice),
               sellingPrice: parseFloat(row.sellingPrice),
-              unit: row.unit,
-              barcode: row.barcode.trim() || undefined   // barcode is optional
+              unit        : row.unit,
+              barcode     : row.barcode.trim() || undefined,
+              expireDates : row.expireDates
             })
           );
         }
@@ -315,103 +354,166 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
                 {variantRows.map((row, index) => (
                   <div
                     key={index}
-                    className={`grid gap-2 items-center px-2 py-2 rounded border
-                      ${row.deleted
+                    className={`rounded border ${
+                      row.deleted
                         ? 'bg-red-50 border-red-200 opacity-60'
                         : row.mode === 'new'
                           ? 'bg-green-50 border-green-200'
                           : 'bg-gray-50 border-gray-200'
-                      }`}
-                    style={{ gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.1fr 1.1fr 32px' }}
+                    }`}
                   >
-                    {/* Variant Name */}
-                    <input
-                      type="text"
-                      value={row.variant}
-                      onChange={(e) => updateRow(index, 'variant', e.target.value)}
-                      disabled={row.deleted}
-                      placeholder={row.mode === 'new' ? 'e.g. XL' : ''}
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
-                        ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
-                    />
-
-                    {/* Unit Dropdown */}
-                    <select
-                      value={row.unit}
-                      onChange={(e) => updateRow(index, 'unit', e.target.value)}
-                      disabled={row.deleted}
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
-                        ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                    {/* Main row grid */}
+                    <div
+                      className="grid gap-2 items-center px-2 py-2"
+                      style={{ gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1.1fr 1.1fr 32px' }}
                     >
-                      {UNIT_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.value === 'unit' ? 'Unit' : opt.value}
-                        </option>
-                      ))}
-                    </select>
+                      {/* Variant Name */}
+                      <input
+                        type="text"
+                        value={row.variant}
+                        onChange={(e) => updateRow(index, 'variant', e.target.value)}
+                        disabled={row.deleted}
+                        placeholder={row.mode === 'new' ? 'e.g. XL' : ''}
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
+                          ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                      />
 
-                    {/* Barcode (optional) */}
-                    <input
-                      type="text"
-                      value={row.barcode}
-                      onChange={(e) => updateRow(index, 'barcode', e.target.value)}
-                      disabled={row.deleted}
-                      placeholder="Optional"
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
-                        ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
-                    />
+                      {/* Unit Dropdown */}
+                      <select
+                        value={row.unit}
+                        onChange={(e) => updateRow(index, 'unit', e.target.value)}
+                        disabled={row.deleted}
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
+                          ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                      >
+                        {UNIT_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.value === 'unit' ? 'Unit' : opt.value}
+                          </option>
+                        ))}
+                      </select>
 
-                    {/* Stock */}
-                    <input
-                      type="number"
-                      step={row.unit === 'unit' ? '1' : '0.01'}
-                      value={row.stock}
-                      onChange={(e) => updateRow(index, 'stock', e.target.value)}
-                      disabled={row.deleted}
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
-                        ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
-                    />
+                      {/* Barcode (optional) */}
+                      <input
+                        type="text"
+                        value={row.barcode}
+                        onChange={(e) => updateRow(index, 'barcode', e.target.value)}
+                        disabled={row.deleted}
+                        placeholder="Optional"
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
+                          ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                      />
 
-                    {/* Buying Price */}
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.buyingPrice}
-                      onChange={(e) => updateRow(index, 'buyingPrice', e.target.value)}
-                      disabled={row.deleted}
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full
-                        ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
-                    />
+                      {/* Stock */}
+                      <input
+                        type="number"
+                        step={row.unit === 'unit' ? '1' : '0.01'}
+                        value={row.stock}
+                        onChange={(e) => updateRow(index, 'stock', e.target.value)}
+                        disabled={row.deleted}
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                          ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                      />
 
-                    {/* Selling Price */}
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.sellingPrice}
-                      onChange={(e) => updateRow(index, 'sellingPrice', e.target.value)}
-                      disabled={row.deleted}
-                      className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 w-full
-                        ${row.deleted
-                          ? 'bg-gray-200 line-through'
-                          : row.buyingPrice && row.sellingPrice && parseFloat(row.sellingPrice) < parseFloat(row.buyingPrice)
-                            ? 'border-red-400 focus:ring-red-400 bg-white'
-                            : 'focus:ring-blue-400 bg-white'
-                        }`}
-                    />
+                      {/* Buying Price */}
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.buyingPrice}
+                        onChange={(e) => updateRow(index, 'buyingPrice', e.target.value)}
+                        disabled={row.deleted}
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                          ${row.deleted ? 'bg-gray-200 line-through' : 'bg-white'}`}
+                      />
 
-                    {/* Remove/Restore Button */}
-                    <button
-                      type="button"
-                      onClick={() => removeRow(index)}
-                      className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold flex-shrink-0
-                        ${row.deleted
-                          ? 'text-blue-500 hover:bg-blue-100'
-                          : 'text-red-500 hover:bg-red-100'
-                        }`}
-                      title={row.deleted ? 'Restore variant' : 'Remove variant'}
-                    >
-                      {row.deleted ? '↩' : '✕'}
-                    </button>
+                      {/* Selling Price */}
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.sellingPrice}
+                        onChange={(e) => updateRow(index, 'sellingPrice', e.target.value)}
+                        disabled={row.deleted}
+                        className={`px-2 py-1.5 border rounded text-sm focus:outline-none focus:ring-2 w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                          ${row.deleted
+                            ? 'bg-gray-200 line-through'
+                            : row.buyingPrice && row.sellingPrice && parseFloat(row.sellingPrice) < parseFloat(row.buyingPrice)
+                              ? 'border-red-400 focus:ring-red-400 bg-white'
+                              : 'focus:ring-blue-400 bg-white'
+                          }`}
+                      />
+
+                      {/* Remove/Restore Button */}
+                      <button
+                        type="button"
+                        onClick={() => removeRow(index)}
+                        className={`w-7 h-7 flex items-center justify-center rounded text-sm font-bold flex-shrink-0
+                          ${row.deleted
+                            ? 'text-blue-500 hover:bg-blue-100'
+                            : 'text-red-500 hover:bg-red-100'
+                          }`}
+                        title={row.deleted ? 'Restore variant' : 'Remove variant'}
+                      >
+                        {row.deleted ? '↩' : '✕'}
+                      </button>
+                    </div>
+
+                    {/* Expire Dates sub-section — hidden when row is deleted */}
+                    {!row.deleted && (
+                      <div className="px-2 pb-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleShowDates(index)}
+                          className="flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-800 font-medium mb-1"
+                        >
+                          <span>📅</span>
+                          <span>Expire Dates</span>
+                          <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">
+                            {row.expireDates.length}
+                          </span>
+                          <span>{row.showDates ? '▲' : '▼'}</span>
+                        </button>
+
+                        {row.showDates && (
+                          <div className="bg-orange-50 border border-orange-200 rounded p-2">
+                            {/* Existing dates as removable tags */}
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {row.expireDates.length === 0 && (
+                                <span className="text-xs text-gray-400 italic">No expire dates added</span>
+                              )}
+                              {row.expireDates.map((dateStr) => (
+                                <span
+                                  key={dateStr}
+                                  className="inline-flex items-center gap-1 bg-orange-200 text-orange-900 text-xs px-2 py-0.5 rounded-full font-medium"
+                                >
+                                  📅 {formatDateDisplay(dateStr)}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeExpireDate(index, dateStr)}
+                                    className="text-orange-700 hover:text-red-700 font-bold ml-0.5"
+                                    title="Remove this date"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Add new date */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-600 whitespace-nowrap">Add date:</span>
+                              <input
+                                type="date"
+                                onChange={(e) => {
+                                  addExpireDate(index, e.target.value);
+                                  e.target.value = ''; // reset after picking
+                                }}
+                                className="px-2 py-0.5 border border-orange-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -429,8 +531,6 @@ const UpdateProduct = ({ showUpdateModal, setShowUpdateModal, productId, onProdu
               variantRows={variantRows.filter(r => !r.deleted)}
               productId={productId}
               onUpdateBarcode={(filteredIndex, value) => {
-                // filteredIndex is index in the non-deleted list,
-                // we need to map it back to the real index in variantRows
                 const activeRows = variantRows
                   .map((r, i) => ({ ...r, realIndex: i }))
                   .filter(r => !r.deleted);
